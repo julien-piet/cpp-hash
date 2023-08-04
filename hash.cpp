@@ -12,20 +12,27 @@
 
 // Forward declaration
 void hash_tokens_cuda(BYTE* seeds, torch::Tensor output);
+void levenshtein_cuda(torch::Tensor scores, torch::Tensor output);
 
-float hash_single_token(std::string seed, int token) {
-    // Setup seed
-    unsigned char ibuf[24];
-    SHA1((unsigned char *)seed.c_str(), seed.length(), ibuf);
+torch::Tensor hash_single_token(std::vector<std::string> seeds, int token) {
+    torch::Tensor results = torch::ones(seeds.size()); 
+    int n = 0;
+    for (auto seed : seeds)
+    {
+        // Setup seed
+        unsigned char ibuf[24];
+        SHA1((unsigned char *)seed.c_str(), seed.length(), ibuf);
 
-    // Hash
-    *(uint32_t *)(ibuf+20) = (uint32_t) token;
-    unsigned char obuf[20];
-    SHA1(ibuf, 24, obuf);
-    uint32_t value = *(uint32_t *)(obuf+16);
-    float norm_value = float(value) / MAX_UINT32;
+        // Hash
+        *(uint32_t *)(ibuf+20) = (uint32_t) token;
+        unsigned char obuf[20];
+        SHA1(ibuf, 24, obuf);
+        uint32_t value = *(uint32_t *)(obuf+16);
+        float norm_value = float(value) / MAX_UINT32;
+        results.index_put_({n++}, norm_value);
+    }
 
-    return norm_value;
+    return results;
 }
 torch::Tensor hash_tokens(std::vector<std::string> seeds, torch::Tensor target)
 {
@@ -74,10 +81,40 @@ torch::Tensor hash_tokens(std::vector<std::string> seeds, torch::Tensor target)
     }
     return target;
 }
+torch::Tensor levenshtein(torch::Tensor scores, torch::Tensor output)
+{
+    if (!output.device().is_cuda())
+    {
+        int key_len = scores.size(0);
+        int seq_len = output.size(1)-1;
+        int i,j;
+        for (i=1; i<=seq_len; i++)
+        {
+            for(j=1; j<=seq_len; j++)
+            {
+                float cost= scores[(i -1)%key_len][j-1].item<float>();
+                float val = output[i-1][j].item<float>();
+                if (output[i][j-1].item<float>() < val) val = output[i][j-1].item<float>();
+                if (output[i-1][j-1].item<float>() + cost < val) val = output[i-1][j-1].item<float>() + cost;
+                output.index_put_({i,j}, val);
+            }
+        }
+    }
+    else
+    {
+        CHECK_CONTIGUOUS(output);
+        CHECK_CONTIGUOUS(scores);
+        const at::cuda::OptionalCUDAGuard device_guard(device_of(output)); 
+        levenshtein_cuda(scores, output);
+    }
+
+    return output;
+}
 
 
 PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("all_index_hash", &hash_tokens, "Index Range Hash");
     m.def("index_hash", &hash_single_token, "Single Index Hash");
+    m.def("levenshtein", &levenshtein, "Levenshtein");
 }
 
