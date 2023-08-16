@@ -15,7 +15,8 @@ void hash_tokens_cuda(BYTE* seeds, torch::Tensor output);
 void levenshtein_cuda(torch::Tensor scores, torch::Tensor output);
 
 torch::Tensor hash_single_token(std::vector<std::string> seeds, int token) {
-    torch::Tensor results = torch::ones(seeds.size()); 
+    auto options = torch::TensorOptions().dtype(torch::kFloat32);
+    torch::Tensor results = torch::ones(seeds.size(), options); 
     int n = 0;
     for (auto seed : seeds)
     {
