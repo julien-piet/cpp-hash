@@ -12,7 +12,7 @@
 
 // Forward declaration
 void hash_tokens_cuda(BYTE* seeds, torch::Tensor output);
-void levenshtein_cuda(torch::Tensor scores, torch::Tensor output);
+void levenshtein_cuda(torch::Tensor scores, torch::Tensor output, float gamma);
 
 torch::Tensor hash_single_token(std::vector<std::string> seeds, int token) {
     auto options = torch::TensorOptions().dtype(torch::kFloat32);
