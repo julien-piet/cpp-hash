@@ -82,7 +82,7 @@ torch::Tensor hash_tokens(std::vector<std::string> seeds, torch::Tensor target)
     }
     return target;
 }
-torch::Tensor levenshtein(torch::Tensor scores, torch::Tensor output)
+torch::Tensor levenshtein(torch::Tensor scores, torch::Tensor output, float gamma)
 {
     if (!output.device().is_cuda())
     {
@@ -94,8 +94,8 @@ torch::Tensor levenshtein(torch::Tensor scores, torch::Tensor output)
             for(j=1; j<=seq_len; j++)
             {
                 float cost= scores[(i -1)%key_len][j-1].item<float>();
-                float val = output[i-1][j].item<float>();
-                if (output[i][j-1].item<float>() < val) val = output[i][j-1].item<float>();
+                float val = output[i-1][j].item<float>() + gamma;
+                if (output[i][j-1].item<float>() + gamma < val) val = output[i][j-1].item<float>() + gamma;
                 if (output[i-1][j-1].item<float>() + cost < val) val = output[i-1][j-1].item<float>() + cost;
                 output.index_put_({i,j}, val);
             }
@@ -106,7 +106,7 @@ torch::Tensor levenshtein(torch::Tensor scores, torch::Tensor output)
         CHECK_CONTIGUOUS(output);
         CHECK_CONTIGUOUS(scores);
         const at::cuda::OptionalCUDAGuard device_guard(device_of(output)); 
-        levenshtein_cuda(scores, output);
+        levenshtein_cuda(scores, output, gamma);
     }
 
     return output;
