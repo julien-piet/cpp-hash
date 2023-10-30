@@ -212,3 +212,47 @@ void hash_tokens_cuda(BYTE* seeds, torch::Tensor output)
 
 	cudaFree(cuda_seeds);
 }
+
+__global__ void kernel_levenshtein(torch::PackedTensorAccessor<float,2,torch::RestrictPtrTraits,size_t> scores, torch::PackedTensorAccessor<float,3,torch::RestrictPtrTraits,size_t> output, WORD key_len, WORD seq_len, WORD output_len, float gamma)
+{
+    // Index setup
+	WORD offset = blockIdx.x * blockDim.x + threadIdx.x;
+
+	if (offset >= output_len) return;
+    //printf("Working on %d : %d\n", batch_idx, token_idx);
+
+    WORD i,j;
+    for (i=1; i<= seq_len; i++) 
+    {
+        for (j=1; j<=seq_len; j++)
+        {
+            float cost = scores[(offset + i -1)%key_len][j-1];
+            output[offset][i][j] = output[offset][i-1][j] + gamma;
+            if (output[offset][i][j-1] + gamma < output[offset][i][j]) output[offset][i][j] = output[offset][i][j-1] + gamma;
+            if (output[offset][i-1][j-1] + cost < output[offset][i][j]) output[offset][i][j] = output[offset][i-1][j-1] + cost;
+        }
+    }
+}
+
+void levenshtein_cuda(torch::Tensor scores, torch::Tensor output, float gamma)
+{
+    const WORD key_len = scores.size(0);
+    const WORD output_len = output.size(0);
+    const WORD seq_len = output.size(1)-1;
+    //BYTE *cuda_seeds;
+	//cudaMalloc(&cuda_seeds, SHA1_BLOCK_SIZE * batch_size);
+	//cudaMemcpy(cuda_seeds, seeds, SHA1_BLOCK_SIZE * batch_size, cudaMemcpyHostToDevice);
+
+	WORD threads = 1024;
+	WORD block = (output_len + threads - 1) / threads;
+ 
+    //printf("About to start\n");
+	kernel_levenshtein << < block, threads >> > (scores.packed_accessor<float,2,torch::RestrictPtrTraits,size_t>(), output.packed_accessor<float,3,torch::RestrictPtrTraits,size_t>(), key_len, seq_len, output_len, gamma);
+
+	// cudaDeviceSynchronize();
+	// cudaError_t error = cudaGetLastError();
+	// if (error != cudaSuccess) {
+	// 	printf("Error cuda sha1 hash: %s \n", cudaGetErrorString(error));
+	// }
+}
+
